@@ -1,19 +1,22 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: "20mb" }));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Models to try in order of preference (fallback chain)
-const MODEL_CHAIN = ['gemini-2.5-flash', 'gemini-2.0-flash-lite'];
-
+const MODEL_CHAIN = [
+  "gemini-1.5-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-2.5-flash",
+];
 async function tryGenerateContent(contentArgs) {
   let lastError;
   for (const modelName of MODEL_CHAIN) {
@@ -23,10 +26,13 @@ async function tryGenerateContent(contentArgs) {
       console.log(`✅ Success with model: ${modelName}`);
       return result;
     } catch (err) {
-      console.warn(`⚠️ Model ${modelName} failed: ${err.status || err.message}`);
+      console.warn(
+        `⚠️ Model ${modelName} failed: ${err.status || err.message}`,
+      );
       lastError = err;
       // Only retry on quota/not-found errors
-      if (err.status !== 429 && err.status !== 404) throw err;
+      if (err.status !== 429 && err.status !== 404 && err.status !== 503)
+        throw err;
     }
   }
   throw lastError;
@@ -82,28 +88,32 @@ Important rules:
 // Parse Gemini response - handle potential markdown formatting
 function parseGeminiResponse(text) {
   let cleaned = text.trim();
-  
+
   // Remove markdown code fences if present
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned
+      .replace(/^```(?:json)?\s*\n?/, "")
+      .replace(/\n?```\s*$/, "");
   }
-  
+
   // Try to extract JSON from the response
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     return JSON.parse(jsonMatch[0]);
   }
-  
+
   return JSON.parse(cleaned);
 }
 
 // Endpoint: Analyze prescription image
-app.post('/api/analyze-prescription', async (req, res) => {
+app.post("/api/analyze-prescription", async (req, res) => {
   try {
     const { imageData, mimeType } = req.body;
 
     if (!imageData || !mimeType) {
-      return res.status(400).json({ error: 'Image data and mime type are required' });
+      return res
+        .status(400)
+        .json({ error: "Image data and mime type are required" });
     }
 
     const result = await tryGenerateContent([
@@ -122,21 +132,21 @@ app.post('/api/analyze-prescription', async (req, res) => {
     const parsed = parseGeminiResponse(text);
     res.json(parsed);
   } catch (error) {
-    console.error('Error analyzing prescription:', error);
+    console.error("Error analyzing prescription:", error);
     res.status(500).json({
-      error: 'Failed to analyze prescription. Please try again.',
+      error: "Failed to analyze prescription. Please try again.",
       details: error.message,
     });
   }
 });
 
 // Endpoint: Search medicine by name
-app.post('/api/search-medicine', async (req, res) => {
+app.post("/api/search-medicine", async (req, res) => {
   try {
     const { medicineName } = req.body;
 
     if (!medicineName || !medicineName.trim()) {
-      return res.status(400).json({ error: 'Medicine name is required' });
+      return res.status(400).json({ error: "Medicine name is required" });
     }
 
     const prompt = `${SYSTEM_PROMPT}\n\nThe user is searching for this medicine: "${medicineName.trim()}"`;
@@ -148,27 +158,34 @@ app.post('/api/search-medicine', async (req, res) => {
     const parsed = parseGeminiResponse(text);
     res.json(parsed);
   } catch (error) {
-    console.error('Error searching medicine:', error);
+    console.error("Error searching medicine:", error);
     res.status(500).json({
-      error: 'Failed to search for medicine. Please try again.',
+      error: "Failed to search for medicine. Please try again.",
       details: error.message,
     });
   }
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // Root route
-app.get('/', (req, res) => {
-  res.send('GenericFind API is running! 🚀<br><br>Please open the React frontend in your browser (usually http://localhost:5173) to view the application.');
+app.get("/", (req, res) => {
+  res.send(
+    "GenericFind API is running! 🚀<br><br>Please open the React frontend in your browser (usually http://localhost:5173) to view the application.",
+  );
 });
 
 app.listen(PORT, () => {
   console.log(`GenericFind server running on http://localhost:${PORT}`);
-  if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
-    console.warn('⚠️  WARNING: GEMINI_API_KEY is not set. Please update server/.env with your actual API key.');
+  if (
+    !process.env.GEMINI_API_KEY ||
+    process.env.GEMINI_API_KEY === "your_gemini_api_key_here"
+  ) {
+    console.warn(
+      "⚠️  WARNING: GEMINI_API_KEY is not set. Please update server/.env with your actual API key.",
+    );
   }
 });
